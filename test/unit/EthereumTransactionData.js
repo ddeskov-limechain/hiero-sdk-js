@@ -1,5 +1,7 @@
 import * as hex from "../../src/encoding/hex.js";
 import { EthereumTransactionData } from "../../src/index.js";
+import EthereumTransactionDataEip2930 from "../../src/EthereumTransactionDataEip2930.js";
+import EthereumTransactionDataEip1559 from "../../src/EthereumTransactionDataEip1559.js";
 import EthereumTransactionDataEip7702 from "../../src/EthereumTransactionDataEip7702.js";
 
 const rawTxType0 = hex.decode(
@@ -29,6 +31,142 @@ describe("EthereumTransactionData", function () {
         expect(
             EthereumTransactionData.fromBytes(rawTxType2).toBytes(),
         ).to.deep.equal(rawTxType2);
+    });
+
+    describe("EthereumTransactionDataEip2930 access list", function () {
+        it("toBytes and fromBytes preserve non-empty access list", function () {
+            const address1 = hex.decode(
+                "0000000000000000000000000000000000000001",
+            );
+            const storageKey1 = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            );
+            const storageKey2 = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000002",
+            );
+
+            const original = new EthereumTransactionDataEip2930({
+                chainId: hex.decode("01"),
+                nonce: hex.decode("01"),
+                gasPrice: hex.decode("0a"),
+                gasLimit: hex.decode("0a"),
+                to: hex.decode(
+                    "0000000000000000000000000000000000000001",
+                ),
+                value: hex.decode("0a"),
+                callData: new Uint8Array(),
+                accessList: [[address1, [storageKey1, storageKey2]]],
+                recId: hex.decode("00"),
+                r: hex.decode(
+                    "38ba8bdbcd8684ff089b8efaf7b5aaf2071a11ab01b6cc65757af79f1199f2ef",
+                ),
+                s: hex.decode(
+                    "570b83f85d578427becab466ced52da857e2a9e48bf9ec5850cc2f541e9305e9",
+                ),
+            });
+
+            const bytes = original.toBytes();
+            const decoded = EthereumTransactionDataEip2930.fromBytes(bytes);
+
+            expect(decoded.accessList).to.be.an("array");
+            expect(decoded.accessList.length).to.equal(1);
+            expect(hex.encode(decoded.accessList[0][0])).to.equal(
+                hex.encode(address1),
+            );
+            expect(decoded.accessList[0][1].length).to.equal(2);
+            expect(hex.encode(decoded.accessList[0][1][0])).to.equal(
+                hex.encode(storageKey1),
+            );
+            expect(hex.encode(decoded.accessList[0][1][1])).to.equal(
+                hex.encode(storageKey2),
+            );
+
+            // Verify roundtrip
+            expect(decoded.toBytes()).to.deep.equal(bytes);
+        });
+
+        it("toJSON produces correct access list format", function () {
+            const address1 = hex.decode(
+                "0000000000000000000000000000000000000001",
+            );
+            const storageKey1 = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            );
+
+            const tx = new EthereumTransactionDataEip2930({
+                chainId: hex.decode("01"),
+                nonce: hex.decode("01"),
+                gasPrice: hex.decode("0a"),
+                gasLimit: hex.decode("0a"),
+                to: hex.decode(
+                    "0000000000000000000000000000000000000001",
+                ),
+                value: hex.decode("0a"),
+                callData: new Uint8Array(),
+                accessList: [[address1, [storageKey1]]],
+                recId: hex.decode("00"),
+                r: hex.decode(
+                    "38ba8bdbcd8684ff089b8efaf7b5aaf2071a11ab01b6cc65757af79f1199f2ef",
+                ),
+                s: hex.decode(
+                    "570b83f85d578427becab466ced52da857e2a9e48bf9ec5850cc2f541e9305e9",
+                ),
+            });
+
+            const json = tx.toJSON();
+            expect(json.accessList).to.be.an("array");
+            expect(json.accessList[0]).to.have.property("address");
+            expect(json.accessList[0]).to.have.property("storageKeys");
+            expect(json.accessList[0].storageKeys).to.be.an("array");
+        });
+    });
+
+    describe("EthereumTransactionDataEip1559 access list", function () {
+        it("toBytes and fromBytes preserve non-empty access list", function () {
+            const address1 = hex.decode(
+                "0000000000000000000000000000000000000001",
+            );
+            const storageKey1 = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            );
+
+            const original = new EthereumTransactionDataEip1559({
+                chainId: hex.decode("012a"),
+                nonce: hex.decode("02"),
+                maxPriorityGas: hex.decode("2f"),
+                maxGas: hex.decode("2f"),
+                gasLimit: hex.decode("018000"),
+                to: hex.decode(
+                    "7e3a9eaf9bcc39e2ffa38eb30bf7a93feacbc181",
+                ),
+                value: hex.decode("0de0b6b3a7640000"),
+                callData: hex.decode("123456"),
+                accessList: [[address1, [storageKey1]]],
+                recId: hex.decode("01"),
+                r: hex.decode(
+                    "df48f2efd10421811de2bfb125ab75b2d3c44139c4642837fb1fccce911fd479",
+                ),
+                s: hex.decode(
+                    "1aaf7ae92bee896651dfc9d99ae422a296bf5d9f1ca49b2d96d82b79eb112d66",
+                ),
+            });
+
+            const bytes = original.toBytes();
+            const decoded = EthereumTransactionDataEip1559.fromBytes(bytes);
+
+            expect(decoded.accessList).to.be.an("array");
+            expect(decoded.accessList.length).to.equal(1);
+            expect(hex.encode(decoded.accessList[0][0])).to.equal(
+                hex.encode(address1),
+            );
+            expect(decoded.accessList[0][1].length).to.equal(1);
+            expect(hex.encode(decoded.accessList[0][1][0])).to.equal(
+                hex.encode(storageKey1),
+            );
+
+            // Verify roundtrip
+            expect(decoded.toBytes()).to.deep.equal(bytes);
+        });
     });
 
     describe("EthereumTransactionDataEip7702", function () {
