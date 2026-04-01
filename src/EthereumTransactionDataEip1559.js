@@ -90,23 +90,21 @@ export default class EthereumTransactionDataEip1559 extends EthereumTransactionD
             callData: hex.decode(/** @type {string} */ (decoded[7])),
             // @ts-ignore
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            accessList: /** @type {Array} */ (decoded[8]).map(
-                (item) => {
-                    if (!Array.isArray(item) || item.length !== 2) {
-                        throw new Error(
-                            "invalid access list entry: must be [address, storageKeys[]]",
-                        );
-                    }
-                    return [
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                        hex.decode(/** @type {string} */ (item[0])),
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                        /** @type {string[]} */ (item[1]).map((key) =>
-                            hex.decode(/** @type {string} */ (key)),
-                        ),
-                    ];
-                },
-            ),
+            accessList: /** @type {Array} */ (decoded[8]).map((item) => {
+                if (!Array.isArray(item) || item.length !== 2) {
+                    throw new Error(
+                        "invalid access list entry: must be [address, storageKeys[]]",
+                    );
+                }
+                return [
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+                    hex.decode(/** @type {string} */ (item[0])),
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+                    /** @type {string[]} */ (item[1]).map((key) =>
+                        hex.decode(/** @type {string} */ (key)),
+                    ),
+                ];
+            }),
             recId: hex.decode(/** @type {string} */ (decoded[9])),
             r: hex.decode(/** @type {string} */ (decoded[10])),
             s: hex.decode(/** @type {string} */ (decoded[11])),
