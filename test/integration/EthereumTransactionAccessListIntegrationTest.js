@@ -246,11 +246,7 @@ describe("EthereumTransactionAccessListIntegrationTest", function () {
         ).to.be.equal(2);
         const gasUsedWith = record2.contractFunctionResult.gasUsed.toNumber();
 
-        console.log(`[EIP-1559] Gas without access list: ${gasUsedWithout}`);
-        console.log(`[EIP-1559] Gas with access list:    ${gasUsedWith}`);
-
-        expect(gasUsedWithout).to.be.gt(0);
-        expect(gasUsedWith).to.be.gt(0);
+        expect(gasUsedWithout).to.be.gte(gasUsedWith);
     });
 
     it("EIP-2930 (type 1): access list reduces or matches gas usage", async function () {
@@ -385,11 +381,7 @@ describe("EthereumTransactionAccessListIntegrationTest", function () {
         ).to.be.equal(2);
         const gasUsedWith = record2.contractFunctionResult.gasUsed.toNumber();
 
-        console.log(`[EIP-2930] Gas without access list: ${gasUsedWithout}`);
-        console.log(`[EIP-2930] Gas with access list:    ${gasUsedWith}`);
-
-        expect(gasUsedWithout).to.be.gt(0);
-        expect(gasUsedWith).to.be.gt(0);
+        expect(gasUsedWithout).to.be.gte(gasUsedWith);
     });
 
     it("EIP-7702 (type 4): access list reduces or matches gas usage", async function () {
@@ -568,10 +560,6 @@ describe("EthereumTransactionAccessListIntegrationTest", function () {
         ).to.be.equal(2);
         const gasUsedWith = record2.contractFunctionResult.gasUsed.toNumber();
 
-        console.log(`[EIP-7702] Gas without access list: ${gasUsedWithout}`);
-        console.log(`[EIP-7702] Gas with access list:    ${gasUsedWith}`);
-
-        expect(gasUsedWithout).to.be.gt(0);
-        expect(gasUsedWith).to.be.gt(0);
+        expect(gasUsedWithout).to.be.gte(gasUsedWith);
     });
 });
