@@ -1,5 +1,6 @@
 import * as hex from "../../src/encoding/hex.js";
 import { EthereumTransactionData } from "../../src/index.js";
+import { encodeRlp, decodeRlp } from "ethers";
 import EthereumTransactionDataEip2930 from "../../src/EthereumTransactionDataEip2930.js";
 import EthereumTransactionDataEip1559 from "../../src/EthereumTransactionDataEip1559.js";
 import EthereumTransactionDataEip7702 from "../../src/EthereumTransactionDataEip7702.js";
@@ -33,6 +34,112 @@ describe("EthereumTransactionData", function () {
         ).to.deep.equal(rawTxType2);
     });
 
+    describe("RLP access list structure", function () {
+        it("decodeRlp returns access list as [address, storageKeys[]] tuples, not flat strings", function () {
+            const address = hex.decode(
+                "0000000000000000000000000000000000000001",
+            );
+            const storageKey1 = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            );
+            const storageKey2 = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000002",
+            );
+
+            // Build a type-1 (EIP-2930) RLP payload with a non-empty access list
+            const accessList = [[address, [storageKey1, storageKey2]]];
+            const rlp = encodeRlp([
+                hex.decode("01"), // chainId
+                hex.decode("00"), // nonce
+                hex.decode("0a"), // gasPrice
+                hex.decode("0a"), // gasLimit
+                hex.decode("0000000000000000000000000000000000000001"), // to
+                hex.decode("00"), // value
+                new Uint8Array(), // callData
+                accessList,
+                hex.decode("00"), // v
+                hex.decode(
+                    "38ba8bdbcd8684ff089b8efaf7b5aaf2071a11ab01b6cc65757af79f1199f2ef",
+                ), // r
+                hex.decode(
+                    "570b83f85d578427becab466ced52da857e2a9e48bf9ec5850cc2f541e9305e9",
+                ), // s
+            ]);
+
+            // Decode the raw RLP and inspect the access list field (index 7)
+            const decoded = decodeRlp(rlp);
+            const rawAccessList = decoded[7];
+
+            // Prove it is NOT a flat array of strings
+            expect(rawAccessList).to.be.an("array");
+            expect(rawAccessList.length).to.equal(1);
+
+            // Each entry is a tuple: [addressHex, [storageKeyHex, ...]]
+            const entry = rawAccessList[0];
+            expect(entry).to.be.an("array");
+            expect(entry.length).to.equal(2);
+
+            // First element is the address (hex string)
+            expect(typeof entry[0]).to.equal("string");
+
+            // Second element is an array of storage keys, NOT a string
+            expect(entry[1]).to.be.an("array");
+            expect(entry[1].length).to.equal(2);
+            expect(typeof entry[1][0]).to.equal("string");
+            expect(typeof entry[1][1]).to.equal("string");
+        });
+
+        it("fromBytes correctly parses a raw EIP-1559 tx with non-empty access list", function () {
+            const address = hex.decode(
+                "7e3a9eaf9bcc39e2ffa38eb30bf7a93feacbc181",
+            );
+            const storageKey = hex.decode(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            );
+
+            // Build a type-2 (EIP-1559) raw transaction with access list
+            const accessList = [[address, [storageKey]]];
+            const rlpPayload = encodeRlp([
+                hex.decode("012a"), // chainId
+                hex.decode("02"), // nonce
+                hex.decode("2f"), // maxPriorityGas
+                hex.decode("2f"), // maxGas
+                hex.decode("018000"), // gasLimit
+                address, // to
+                hex.decode("0de0b6b3a7640000"), // value
+                hex.decode("123456"), // callData
+                accessList,
+                hex.decode("01"), // v
+                hex.decode(
+                    "df48f2efd10421811de2bfb125ab75b2d3c44139c4642837fb1fccce911fd479",
+                ), // r
+                hex.decode(
+                    "1aaf7ae92bee896651dfc9d99ae422a296bf5d9f1ca49b2d96d82b79eb112d66",
+                ), // s
+            ]);
+
+            // Prepend type byte 0x02
+            const rawTx = hex.decode("02" + rlpPayload.substring(2));
+
+            // fromBytes must not throw
+            const txData = EthereumTransactionData.fromBytes(rawTx);
+
+            // Access list must be parsed as [Uint8Array, Uint8Array[]] tuples
+            expect(txData.accessList).to.be.an("array");
+            expect(txData.accessList.length).to.equal(1);
+            expect(txData.accessList[0][0]).to.be.instanceOf(Uint8Array);
+            expect(hex.encode(txData.accessList[0][0])).to.equal(
+                hex.encode(address),
+            );
+            expect(txData.accessList[0][1]).to.be.an("array");
+            expect(txData.accessList[0][1].length).to.equal(1);
+            expect(txData.accessList[0][1][0]).to.be.instanceOf(Uint8Array);
+            expect(hex.encode(txData.accessList[0][1][0])).to.equal(
+                hex.encode(storageKey),
+            );
+        });
+    });
+
     describe("EthereumTransactionDataEip2930 access list", function () {
         it("toBytes and fromBytes preserve non-empty access list", function () {
             const address1 = hex.decode(
@@ -50,9 +157,7 @@ describe("EthereumTransactionData", function () {
                 nonce: hex.decode("01"),
                 gasPrice: hex.decode("0a"),
                 gasLimit: hex.decode("0a"),
-                to: hex.decode(
-                    "0000000000000000000000000000000000000001",
-                ),
+                to: hex.decode("0000000000000000000000000000000000000001"),
                 value: hex.decode("0a"),
                 callData: new Uint8Array(),
                 accessList: [[address1, [storageKey1, storageKey2]]],
@@ -98,9 +203,7 @@ describe("EthereumTransactionData", function () {
                 nonce: hex.decode("01"),
                 gasPrice: hex.decode("0a"),
                 gasLimit: hex.decode("0a"),
-                to: hex.decode(
-                    "0000000000000000000000000000000000000001",
-                ),
+                to: hex.decode("0000000000000000000000000000000000000001"),
                 value: hex.decode("0a"),
                 callData: new Uint8Array(),
                 accessList: [[address1, [storageKey1]]],
@@ -136,9 +239,7 @@ describe("EthereumTransactionData", function () {
                 maxPriorityGas: hex.decode("2f"),
                 maxGas: hex.decode("2f"),
                 gasLimit: hex.decode("018000"),
-                to: hex.decode(
-                    "7e3a9eaf9bcc39e2ffa38eb30bf7a93feacbc181",
-                ),
+                to: hex.decode("7e3a9eaf9bcc39e2ffa38eb30bf7a93feacbc181"),
                 value: hex.decode("0de0b6b3a7640000"),
                 callData: hex.decode("123456"),
                 accessList: [[address1, [storageKey1]]],
