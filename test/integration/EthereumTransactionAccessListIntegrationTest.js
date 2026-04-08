@@ -20,8 +20,8 @@ import IntegrationTestEnv from "./client/NodeIntegrationTestEnv.js";
 import * as hex from "../../src/encoding/hex.js";
 
 /**
- * @summary Integration tests for access list support in EIP-2930 (type 1)
- * and EIP-1559 (type 2) Ethereum transactions.
+ * @summary Integration tests for access list support in EIP-2930 (type 1),
+ * EIP-1559 (type 2), and EIP-7702 (type 4) Ethereum transactions.
  *
  * @description
  * Verifies that Ethereum transactions with non-empty access lists can be
@@ -388,6 +388,161 @@ describe("EthereumTransactionAccessListIntegrationTest", function () {
         expect(json.accessList[0]).to.have.property("storageKeys");
         expect(json.accessList[0].storageKeys).to.be.an("array");
         expect(json.accessList[0].storageKeys.length).to.equal(1);
+
+        const response = await (
+            await (
+                await new EthereumTransaction()
+                    .setEthereumData(ethereumData)
+                    .freezeWithSigner(wallet)
+            ).signWithSigner(wallet)
+        ).executeWithSigner(wallet);
+
+        const receipt = await response.getReceiptWithSigner(wallet);
+        expect(receipt).to.be.instanceof(TransactionReceipt);
+        expect(receipt.status).to.be.equal(Status.Success);
+    });
+
+    it("EIP-7702 (type 4) transaction with non-empty access list and authorization list", async function () {
+        const type = "04";
+        const chainId = hex.decode("012a");
+        const nonce = new Uint8Array();
+        const maxPriorityGas = hex.decode("00");
+        const maxGas = hex.decode("d1385c7bf0");
+        const gasLimit = hex.decode("0249f0");
+        const value = new Uint8Array();
+        const to = hex.decode(contractAddress);
+        const callData = new ContractFunctionParameters()
+            .addString("eip7702 message")
+            ._build("setMessage");
+
+        // Access list with contract address and storage slot
+        const accessList = [
+            [
+                hex.decode(contractAddress),
+                [
+                    hex.decode(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    ),
+                ],
+            ],
+        ];
+
+        // Create an authorization: delegate to the contract address
+        // Authorization tuple: [chainId, contractAddress, nonce, yParity, r, s]
+        const authKey = PrivateKey.generateECDSA();
+        const authChainId = hex.decode("012a");
+        const authContractAddress = hex.decode(contractAddress);
+        const authNonce = hex.decode("00");
+
+        // Sign the authorization: RLP([chainId, contractAddress, nonce]) prefixed with 0x05
+        const authEncoded = encodeRlp([
+            authChainId,
+            authContractAddress,
+            authNonce,
+        ]).substring(2);
+        const authMessage = hex.decode("05" + authEncoded);
+        const authSignedBytes = authKey.sign(authMessage);
+        const authMid = authSignedBytes.length / 2;
+        const authR = authSignedBytes.slice(0, authMid);
+        const authS = authSignedBytes.slice(authMid);
+        const authRecoveryId = authKey.getRecoveryId(authR, authS, authMessage);
+        const authYParity = new Uint8Array(
+            authRecoveryId === 0 ? [] : [authRecoveryId],
+        );
+
+        const authorizationList = [
+            [
+                authChainId,
+                authContractAddress,
+                authNonce,
+                authYParity,
+                authR,
+                authS,
+            ],
+        ];
+
+        // RLP encode unsigned transaction (type 4 fields)
+        const encoded = encodeRlp([
+            chainId,
+            nonce,
+            maxPriorityGas,
+            maxGas,
+            gasLimit,
+            to,
+            value,
+            callData,
+            accessList,
+            authorizationList,
+        ]).substring(2);
+
+        const privateKey = PrivateKey.generateECDSA();
+        const accountAlias = privateKey.publicKey.toEvmAddress();
+
+        // Fund the ECDSA account
+        const transfer = await new TransferTransaction()
+            .addHbarTransfer(operatorId, new Hbar(10).negated())
+            .addHbarTransfer(accountAlias, new Hbar(10))
+            .setMaxTransactionFee(new Hbar(1))
+            .freezeWithSigner(wallet);
+
+        const transferResponse = await transfer.executeWithSigner(wallet);
+        const transferReceipt =
+            await transferResponse.getReceiptWithSigner(wallet);
+        expect(transferReceipt.status).to.be.equal(Status.Success);
+
+        // Sign the transaction
+        const message = hex.decode(type + encoded);
+        const signedBytes = privateKey.sign(message);
+        const middleOfSignedBytes = signedBytes.length / 2;
+        const r = signedBytes.slice(0, middleOfSignedBytes);
+        const s = signedBytes.slice(middleOfSignedBytes, signedBytes.length);
+        const recoveryId = privateKey.getRecoveryId(r, s, message);
+        const v = new Uint8Array(recoveryId === 0 ? [] : [recoveryId]);
+
+        const data = encodeRlp([
+            chainId,
+            nonce,
+            maxPriorityGas,
+            maxGas,
+            gasLimit,
+            to,
+            value,
+            callData,
+            accessList,
+            authorizationList,
+            v,
+            r,
+            s,
+        ]).substring(2);
+
+        const ethereumData = hex.decode(type + data);
+
+        // Verify that EthereumTransactionData.fromBytes routes to EIP-7702
+        // and correctly parses both access list and authorization list
+        const txData = EthereumTransactionData.fromBytes(ethereumData);
+        expect(txData.accessList).to.be.an("array");
+        expect(txData.accessList.length).to.equal(1);
+        expect(txData.accessList[0][0]).to.be.instanceOf(Uint8Array);
+        expect(txData.accessList[0][1]).to.be.an("array");
+        expect(txData.accessList[0][1].length).to.equal(1);
+
+        // Verify authorization list
+        expect(txData.authorizationList).to.be.an("array");
+        expect(txData.authorizationList.length).to.equal(1);
+        expect(txData.authorizationList[0]).to.be.an("array");
+        expect(txData.authorizationList[0].length).to.equal(6);
+
+        // Verify roundtrip
+        const roundtripped = EthereumTransactionData.fromBytes(
+            txData.toBytes(),
+        );
+        expect(roundtripped.accessList.length).to.equal(1);
+        expect(roundtripped.authorizationList.length).to.equal(1);
+
+        // Verify toJSON format
+        const json = txData.toJSON();
+        expect(json.accessList[0]).to.have.property("address");
+        expect(json.accessList[0]).to.have.property("storageKeys");
 
         const response = await (
             await (
